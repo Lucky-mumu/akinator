@@ -21,5 +21,6 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Test files
+# Runtime generated files
 test_*.json
+knowledge_base.json
