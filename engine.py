@@ -5,6 +5,11 @@
 import math
 from typing import Dict, List, Tuple, Optional
 
+# 尤度計算の定数
+# 回答と期待値の差が最大(2.0)の場合でも最小尤度(0.1)を保証
+# 差0.0 → 尤度1.0、差2.0 → 尤度0.1 となるように調整
+LIKELIHOOD_SCALING_FACTOR = 0.45
+
 
 class InferenceEngine:
     """ベイズ推定による推論エンジン"""
@@ -38,6 +43,21 @@ class InferenceEngine:
         self._initialize_probabilities()
         self.asked_questions.clear()
     
+    def _calculate_likelihood(self, expected_value: float, answer: float) -> float:
+        """
+        回答と期待値から尤度を計算
+        
+        Args:
+            expected_value: エンティティの期待値（-1.0〜1.0）
+            answer: ユーザーの回答値（-1.0〜1.0）
+            
+        Returns:
+            尤度（0.1〜1.0）
+        """
+        diff = abs(expected_value - answer)
+        # 差が0なら尤度1.0、差が2.0（最大）なら尤度0.1
+        return max(0.1, 1.0 - diff * LIKELIHOOD_SCALING_FACTOR)
+    
     def update_probabilities(self, question_id: str, answer: float) -> None:
         """
         回答に基づいてベイズ更新を実行
@@ -57,11 +77,7 @@ class InferenceEngine:
         for entity_name, attributes in self.entities.items():
             if question_id in attributes:
                 expected_value = attributes[question_id]
-                # 回答と期待値の一致度から尤度を計算
-                # 一致度が高いほど尤度が高くなる
-                diff = abs(expected_value - answer)
-                # 差が0なら尤度1.0、差が2.0（最大）なら尤度0.1
-                likelihood = max(0.1, 1.0 - diff * 0.45)
+                likelihood = self._calculate_likelihood(expected_value, answer)
                 likelihoods[entity_name] = likelihood
             else:
                 # 属性が未定義の場合は中立的な尤度
@@ -143,8 +159,7 @@ class InferenceEngine:
             for entity_name in self.entities:
                 if question_id in self.entities[entity_name]:
                     expected_value = self.entities[entity_name][question_id]
-                    diff = abs(expected_value - answer)
-                    likelihood = max(0.1, 1.0 - diff * 0.45)
+                    likelihood = self._calculate_likelihood(expected_value, answer)
                 else:
                     likelihood = 0.5
                 

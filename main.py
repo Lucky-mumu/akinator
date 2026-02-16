@@ -137,6 +137,11 @@ def play_game(kb: KnowledgeBase, engine: InferenceEngine) -> bool:
         
         if guess in ['はい', 'y', 'yes']:
             print("\n🎉 ギリギリ当たりました！")
+            
+            # 強化学習：回答に基づいて属性を更新
+            for question_id, answer_value in answer_history.items():
+                engine.reinforce_entity(entity_name, question_id, answer_value)
+            
             kb.save()
             return ask_play_again()
     
@@ -181,8 +186,15 @@ def play_game(kb: KnowledgeBase, engine: InferenceEngine) -> bool:
             kb.add_entity(correct_answer, new_attributes)
             
             # 他のエンティティにもこの質問の属性を追加（逆の値で）
+            # 注: answer_valueが0.0(わからない)の場合でも-0.0として扱われる
+            # これは区別するための質問なので、正解が「はい」なら間違いは「いいえ」と想定
             if best_guess:
-                opposite_value = -answer_value  # 逆の値
+                if abs(answer_value) < 0.01:
+                    # わからないの場合は0.0のまま（区別できない）
+                    opposite_value = 0.0
+                else:
+                    # それ以外は符号を反転
+                    opposite_value = -answer_value
                 kb.update_attribute(best_guess[0], new_question_id, opposite_value)
             
             print(f"\n✅ 「{correct_answer}」を知識ベースに追加しました！")
