@@ -74,6 +74,9 @@ def play_game(kb: KnowledgeBase, engine: InferenceEngine) -> bool:
     question_count = 0
     guess_threshold = 0.75
     
+    # 回答履歴を保存
+    answer_history = {}
+    
     # 質問フェーズ
     while question_count < max_questions:
         # 現在の最良の推測を確認
@@ -89,9 +92,8 @@ def play_game(kb: KnowledgeBase, engine: InferenceEngine) -> bool:
                 print("\n🎉 やった！当たりました！")
                 
                 # 強化学習：回答に基づいて属性を更新
-                for question_id in engine.asked_questions:
-                    # 過去の回答を取得（簡単のため、最新の状態を使用）
-                    pass  # 実際の回答履歴は保持していないため、スキップ
+                for question_id, answer_value in answer_history.items():
+                    engine.reinforce_entity(entity_name, question_id, answer_value)
                 
                 kb.save()
                 print("学習結果を保存しました。")
@@ -111,6 +113,9 @@ def play_game(kb: KnowledgeBase, engine: InferenceEngine) -> bool:
         question_text = engine.questions[question_id]
         choice = display_question(question_text)
         answer_value = get_answer_value(choice)
+        
+        # 回答を履歴に保存
+        answer_history[question_id] = answer_value
         
         # 確率を更新
         engine.update_probabilities(question_id, answer_value)
@@ -164,11 +169,11 @@ def play_game(kb: KnowledgeBase, engine: InferenceEngine) -> bool:
             new_question_id = f"q{uuid.uuid4().hex[:8]}"
             kb.add_question(new_question_id, new_question)
             
-            # 新しいエンティティを追加（既存の質問に対してデフォルト値を設定）
+            # 新しいエンティティを追加（回答履歴から属性を設定）
             new_attributes = {}
-            for qid in engine.asked_questions:
-                # 回答履歴から属性を推定（簡易版）
-                new_attributes[qid] = 0.0  # デフォルト値
+            for qid, ans_value in answer_history.items():
+                # 回答履歴から属性を設定
+                new_attributes[qid] = ans_value
             
             # 新しい質問の回答を追加
             new_attributes[new_question_id] = answer_value

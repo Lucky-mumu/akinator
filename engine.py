@@ -136,8 +136,10 @@ class InferenceEngine:
         expected_entropy = 0.0
         
         for answer in [1.0, -1.0]:
-            # 仮の確率分布を作成
-            temp_probs = {}
+            # この回答になる確率を計算（正規化前のスコア合計）
+            total_score = 0.0
+            temp_scores = {}
+            
             for entity_name in self.entities:
                 if question_id in self.entities[entity_name]:
                     expected_value = self.entities[entity_name][question_id]
@@ -146,16 +148,24 @@ class InferenceEngine:
                 else:
                     likelihood = 0.5
                 
-                temp_probs[entity_name] = self.probabilities[entity_name] * likelihood
+                score = self.probabilities[entity_name] * likelihood
+                temp_scores[entity_name] = score
+                total_score += score
             
-            # 正規化
-            total = sum(temp_probs.values())
-            if total > 0:
-                for entity_name in temp_probs:
-                    temp_probs[entity_name] /= total
+            # 正規化して確率分布を作成
+            temp_probs = {}
+            if total_score > 0:
+                for entity_name in temp_scores:
+                    temp_probs[entity_name] = temp_scores[entity_name] / total_score
+            else:
+                # すべて0の場合は一様分布
+                uniform_prob = 1.0 / len(self.entities) if self.entities else 0.0
+                for entity_name in self.entities:
+                    temp_probs[entity_name] = uniform_prob
             
-            # この回答になる確率
-            answer_prob = total / (sum(self.probabilities.values()) + 1e-10)
+            # この回答になる確率（正規化前の合計 / 現在の確率の合計）
+            current_total = sum(self.probabilities.values())
+            answer_prob = total_score / current_total if current_total > 0 else 0.5
             
             # このシナリオのエントロピーを加算
             expected_entropy += answer_prob * self._calculate_entropy(temp_probs)
