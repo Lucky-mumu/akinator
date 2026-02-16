@@ -3,7 +3,7 @@
 対話形式でゲームを実行
 """
 from knowledge_base import KnowledgeBase
-from engine import InferenceEngine
+from engine import InferenceEngine, UNKNOWN_ANSWER_THRESHOLD
 import uuid
 
 
@@ -186,10 +186,10 @@ def play_game(kb: KnowledgeBase, engine: InferenceEngine) -> bool:
             kb.add_entity(correct_answer, new_attributes)
             
             # 他のエンティティにもこの質問の属性を追加（逆の値で）
-            # 注: answer_valueが0.0(わからない)の場合でも-0.0として扱われる
+            # 注: Pythonでは0.0と-0.0は等価だが、ここでは明示的にチェック
             # これは区別するための質問なので、正解が「はい」なら間違いは「いいえ」と想定
             if best_guess:
-                if abs(answer_value) < 0.01:
+                if abs(answer_value) < UNKNOWN_ANSWER_THRESHOLD:
                     # わからないの場合は0.0のまま（区別できない）
                     opposite_value = 0.0
                 else:

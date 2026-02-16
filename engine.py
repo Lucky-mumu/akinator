@@ -7,8 +7,12 @@ from typing import Dict, List, Tuple, Optional
 
 # 尤度計算の定数
 # 回答と期待値の差が最大(2.0)の場合でも最小尤度(0.1)を保証
-# 差0.0 → 尤度1.0、差2.0 → 尤度0.1 となるように調整
+# 計算式: likelihood = 1.0 - diff * LIKELIHOOD_SCALING_FACTOR
+# 例: diff=0.0 → 1.0 - 0.0*0.45 = 1.0、diff=2.0 → 1.0 - 2.0*0.45 = 0.1
 LIKELIHOOD_SCALING_FACTOR = 0.45
+
+# わからない（不明）回答の判定閾値
+UNKNOWN_ANSWER_THRESHOLD = 0.01
 
 
 class InferenceEngine:
@@ -69,7 +73,7 @@ class InferenceEngine:
         self.asked_questions.add(question_id)
         
         # わからないの場合は更新しない
-        if abs(answer) < 0.01:
+        if abs(answer) < UNKNOWN_ANSWER_THRESHOLD:
             return
         
         # 各エンティティの尤度を計算
@@ -147,6 +151,11 @@ class InferenceEngine:
             
         Returns:
             期待エントロピー
+            
+        Note:
+            計算を簡略化するため、「はい(1.0)」と「いいえ(-1.0)」の2つの極端な
+            回答のみをシミュレートします。実際には「たぶんはい(0.5)」などの
+            中間的な回答も可能ですが、情報利得の傾向を把握するには十分です。
         """
         # 「はい」と「いいえ」の両方の場合をシミュレート
         expected_entropy = 0.0
