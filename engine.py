@@ -1,0 +1,215 @@
+"""
+推論エンジンモジュール
+ベイズ推定と情報エントロピーによる質問選択を実装
+"""
+import math
+from typing import Dict, List, Tuple, Optional
+
+
+class InferenceEngine:
+    """ベイズ推定による推論エンジン"""
+    
+    def __init__(self, entities: Dict[str, Dict[str, float]], questions: Dict[str, str]):
+        """
+        推論エンジンを初期化
+        
+        Args:
+            entities: エンティティと属性値のマッピング
+            questions: 質問IDと質問文のマッピング
+        """
+        self.entities = entities
+        self.questions = questions
+        # 各エンティティの事後確率を初期化（一様分布）
+        self.probabilities: Dict[str, float] = {}
+        self._initialize_probabilities()
+        # 既に質問した質問IDのセット
+        self.asked_questions: set = set()
+    
+    def _initialize_probabilities(self) -> None:
+        """事後確率を一様分布で初期化"""
+        if not self.entities:
+            return
+        initial_prob = 1.0 / len(self.entities)
+        for entity_name in self.entities:
+            self.probabilities[entity_name] = initial_prob
+    
+    def reset(self) -> None:
+        """推論状態をリセット"""
+        self._initialize_probabilities()
+        self.asked_questions.clear()
+    
+    def update_probabilities(self, question_id: str, answer: float) -> None:
+        """
+        回答に基づいてベイズ更新を実行
+        
+        Args:
+            question_id: 質問ID
+            answer: 回答値（-1.0=いいえ、-0.5=たぶんいいえ、0.0=わからない、0.5=たぶんはい、1.0=はい）
+        """
+        self.asked_questions.add(question_id)
+        
+        # わからないの場合は更新しない
+        if abs(answer) < 0.01:
+            return
+        
+        # 各エンティティの尤度を計算
+        likelihoods: Dict[str, float] = {}
+        for entity_name, attributes in self.entities.items():
+            if question_id in attributes:
+                expected_value = attributes[question_id]
+                # 回答と期待値の一致度から尤度を計算
+                # 一致度が高いほど尤度が高くなる
+                diff = abs(expected_value - answer)
+                # 差が0なら尤度1.0、差が2.0（最大）なら尤度0.1
+                likelihood = max(0.1, 1.0 - diff * 0.45)
+                likelihoods[entity_name] = likelihood
+            else:
+                # 属性が未定義の場合は中立的な尤度
+                likelihoods[entity_name] = 0.5
+        
+        # ベイズ更新: P(entity|answer) ∝ P(answer|entity) * P(entity)
+        for entity_name in self.probabilities:
+            self.probabilities[entity_name] *= likelihoods[entity_name]
+        
+        # 正規化
+        total = sum(self.probabilities.values())
+        if total > 0:
+            for entity_name in self.probabilities:
+                self.probabilities[entity_name] /= total
+    
+    def get_best_question(self) -> Optional[str]:
+        """
+        情報エントロピーに基づいて最適な質問を選択
+        
+        Returns:
+            最適な質問ID、または質問がない場合はNone
+        """
+        available_questions = [qid for qid in self.questions if qid not in self.asked_questions]
+        
+        if not available_questions:
+            return None
+        
+        best_question = None
+        max_info_gain = -1.0
+        
+        # 現在のエントロピーを計算
+        current_entropy = self._calculate_entropy(self.probabilities)
+        
+        for question_id in available_questions:
+            # この質問をした場合の期待情報利得を計算
+            expected_entropy = self._calculate_expected_entropy(question_id)
+            info_gain = current_entropy - expected_entropy
+            
+            if info_gain > max_info_gain:
+                max_info_gain = info_gain
+                best_question = question_id
+        
+        return best_question
+    
+    def _calculate_entropy(self, probs: Dict[str, float]) -> float:
+        """
+        エントロピーを計算
+        
+        Args:
+            probs: 確率分布
+            
+        Returns:
+            エントロピー値
+        """
+        entropy = 0.0
+        for prob in probs.values():
+            if prob > 0:
+                entropy -= prob * math.log2(prob)
+        return entropy
+    
+    def _calculate_expected_entropy(self, question_id: str) -> float:
+        """
+        質問をした場合の期待エントロピーを計算
+        
+        Args:
+            question_id: 質問ID
+            
+        Returns:
+            期待エントロピー
+        """
+        # 「はい」と「いいえ」の両方の場合をシミュレート
+        expected_entropy = 0.0
+        
+        for answer in [1.0, -1.0]:
+            # 仮の確率分布を作成
+            temp_probs = {}
+            for entity_name in self.entities:
+                if question_id in self.entities[entity_name]:
+                    expected_value = self.entities[entity_name][question_id]
+                    diff = abs(expected_value - answer)
+                    likelihood = max(0.1, 1.0 - diff * 0.45)
+                else:
+                    likelihood = 0.5
+                
+                temp_probs[entity_name] = self.probabilities[entity_name] * likelihood
+            
+            # 正規化
+            total = sum(temp_probs.values())
+            if total > 0:
+                for entity_name in temp_probs:
+                    temp_probs[entity_name] /= total
+            
+            # この回答になる確率
+            answer_prob = total / (sum(self.probabilities.values()) + 1e-10)
+            
+            # このシナリオのエントロピーを加算
+            expected_entropy += answer_prob * self._calculate_entropy(temp_probs)
+        
+        return expected_entropy
+    
+    def get_top_candidates(self, n: int = 3) -> List[Tuple[str, float]]:
+        """
+        確率が高い上位N件の候補を取得
+        
+        Args:
+            n: 取得する候補数
+            
+        Returns:
+            (エンティティ名, 確率)のリスト
+        """
+        sorted_entities = sorted(
+            self.probabilities.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+        return sorted_entities[:n]
+    
+    def get_best_guess(self) -> Optional[Tuple[str, float]]:
+        """
+        最も確率が高いエンティティを取得
+        
+        Returns:
+            (エンティティ名, 確率)、またはNone
+        """
+        if not self.probabilities:
+            return None
+        
+        best_entity = max(self.probabilities.items(), key=lambda x: x[1])
+        return best_entity
+    
+    def reinforce_entity(self, entity_name: str, question_id: str, answer: float, learning_rate: float = 0.1) -> None:
+        """
+        正解時に属性値を強化学習
+        
+        Args:
+            entity_name: エンティティ名
+            question_id: 質問ID
+            answer: 回答値
+            learning_rate: 学習率
+        """
+        if entity_name not in self.entities:
+            return
+        
+        if question_id not in self.entities[entity_name]:
+            self.entities[entity_name][question_id] = answer
+        else:
+            # 既存の値を回答に近づける
+            current_value = self.entities[entity_name][question_id]
+            new_value = current_value + learning_rate * (answer - current_value)
+            # -1.0から1.0の範囲に制限
+            self.entities[entity_name][question_id] = max(-1.0, min(1.0, new_value))
